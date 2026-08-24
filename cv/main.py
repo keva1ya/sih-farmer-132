@@ -12,6 +12,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, File, Query, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from cv.config import (
@@ -30,6 +31,13 @@ app = FastAPI(
         "for reference, and returns an AGMARK grade."
     ),
     version="0.1.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:4173", "http://127.0.0.1:4173"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
 )
 
 # Directory for storing uploaded videos
@@ -67,7 +75,10 @@ async def analyze_grain(
     if file.content_type not in ALLOWED_EXTENSIONS:
         return JSONResponse(
             status_code=400,
-            content={"status": "invalid_format"},
+            content={
+                "status": "invalid_format",
+                "reason": "The uploaded file must be a JPEG or PNG image.",
+            },
         )
 
     # Read the file
@@ -78,7 +89,10 @@ async def analyze_grain(
     if file_size_mb > MAX_FILE_SIZE_MB:
         return JSONResponse(
             status_code=400,
-            content={"status": "file_too_large"},
+            content={
+                "status": "file_too_large",
+                "reason": f"The image exceeds the {MAX_FILE_SIZE_MB} MB size limit.",
+            },
         )
 
     # --- Run Pipeline ---

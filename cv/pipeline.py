@@ -13,7 +13,7 @@ import json
 import cv2
 import numpy as np
 
-from cv.config import IMAGE_RESIZE_WIDTH, MIN_GRAIN_COUNT
+from cv.config import BLUR_THRESHOLD, IMAGE_RESIZE_WIDTH, MIN_GRAIN_COUNT
 from cv.steps.blur_check import check_blur
 from cv.steps.coin_calibration import detect_and_calibrate, mask_coin
 from cv.steps.white_balance import calibrate_white_balance
@@ -21,6 +21,11 @@ from cv.steps.segmentation import segment_grains
 from cv.steps.measurement import measure_grains, classify_broken
 from cv.steps.defect_detection import detect_discoloration, detect_foreign_matter
 from cv.steps.grading import compute_grade
+
+
+def _failure(status: str, reason: str) -> dict[str, str]:
+    """Build a deterministic, user-facing pipeline failure response."""
+    return {"status": status, "reason": reason}
 
 
 def _resize_image(image: np.ndarray, target_width: int) -> np.ndarray:
@@ -57,23 +62,33 @@ def run_pipeline(
         A dict matching the AnalyzeSuccessResponse or AnalyzeErrorResponse schema.
     """
     # --- Step 0: Decode & Resize ---
+    if not image_bytes:
+        return _failure("invalid_format", "The uploaded image is empty.")
+
     buf = np.frombuffer(image_bytes, dtype=np.uint8)
     image = cv2.imdecode(buf, cv2.IMREAD_COLOR)
 
     if image is None:
-        return {"status": "invalid_format"}
+        return _failure("invalid_format", "The uploaded file is not a readable JPEG or PNG image.")
 
     image = _resize_image(image, IMAGE_RESIZE_WIDTH)
 
     # --- Step 1: Blur Check ---
-    is_sharp, _variance = check_blur(image)
+    is_sharp, variance = check_blur(image)
     if not is_sharp:
-        return {"status": "too_blurry"}
+        return _failure(
+            "too_blurry",
+            f"Laplacian variance {variance:.2f} is below the required threshold of {BLUR_THRESHOLD:.2f}.",
+        )
 
     # --- Step 2: Coin Detection & Calibration ---
     error, pixels_per_mm, coin_center, coin_radius = detect_and_calibrate(image)
     if error is not None:
-        return {"status": error}
+        reasons = {
+            "coin_not_found": "No Rs 10 reference coin was detected in the image.",
+            "too_tilted": "The Rs 10 reference coin is too tilted for calibration.",
+        }
+        return _failure(error, reasons.get(error, "The reference coin could not be verified."))
 
     # --- Step 3: Mask Coin ---
     image_no_coin = mask_coin(image, coin_center, coin_radius)
@@ -86,7 +101,10 @@ def run_pipeline(
 
     # --- Step 6: Minimum Grain Count ---
     if len(grain_contours) < MIN_GRAIN_COUNT:
-        return {"status": "too_few_grains"}
+        return _failure(
+            "too_few_grains",
+            f"Only {len(grain_contours)} grains were detected; at least {MIN_GRAIN_COUNT} are required.",
+        )
 
     # --- Step 10: Foreign Matter Detection (before measurement, to reclassify) ---
     foreign_pct, grain_contours = detect_foreign_matter(
@@ -95,13 +113,16 @@ def run_pipeline(
 
     # Re-check grain count after foreign matter reclassification
     if len(grain_contours) < MIN_GRAIN_COUNT:
-        return {"status": "too_few_grains"}
+        return _failure(
+            "too_few_grains",
+            f"Only {len(grain_contours)} valid grains remained; at least {MIN_GRAIN_COUNT} are required.",
+        )
 
     # --- Step 7: Grain Measurement ---
     measurements = measure_grains(grain_contours, pixels_per_mm)
 
     if not measurements:
-        return {"status": "too_few_grains"}
+        return _failure("too_few_grains", "No measurable grains were found in the image.")
 
     # --- Step 8: Broken Grain Classification ---
     broken_pct, median_length = classify_broken(measurements)

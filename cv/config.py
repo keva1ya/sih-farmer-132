@@ -15,7 +15,7 @@ ALLOWED_EXTENSIONS: set[str] = {"image/jpeg", "image/png"}
 # ---------------------------------------------------------------------------
 # Blur Detection (Step 1)
 # ---------------------------------------------------------------------------
-BLUR_THRESHOLD: float = 100.0  # Laplacian variance; below = too blurry
+BLUR_THRESHOLD: float = 30.0  # Laplacian variance; below = too blurry
 
 # ---------------------------------------------------------------------------
 # Coin Calibration (Step 2)

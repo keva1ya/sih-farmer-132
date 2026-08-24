@@ -54,6 +54,7 @@ class AnalyzeErrorResponse(BaseModel):
             "coin_not_recognized | too_few_grains | invalid_format | file_too_large"
         ),
     )
+    reason: str = Field(..., description="Deterministic explanation for the failure")
 
 
 class VideoUploadResponse(BaseModel):

@@ -1,0 +1,8 @@
+## Frontend local/generated files
+frontend/
+## Local media and Python runtime files
+uploaded_videos/*
+__pycache__/
+*.py[cod]
+.venv/
+start.ps1
