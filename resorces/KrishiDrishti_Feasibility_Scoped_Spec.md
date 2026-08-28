@@ -1,4 +1,4 @@
-# AgriTrust: Market Intelligence & Trade-Enablement Platform for Farmers
+# KrishiDrishti: Market Intelligence & Trade-Enablement Platform for Farmers
 ## Feasibility-Scoped Build Specification (v2)
 
 > This version restructures the original design around one rule: every module is labeled as either **BUILD** (will run live in the demo) or **ROADMAP** (designed and pitched, not built). Judges respect honest scoping far more than an unlabeled wall of ambitious features.
@@ -14,7 +14,7 @@ Smallholder farmers and Farmer Producer Organizations (FPOs) face systemic frict
 - **Subjective quality discounting** — informal grading at the farm gate leaves room for arbitrary price cuts by local traders.
 - **Settlement uncertainty** — payment delays and disputes with no transparent trail.
 
-**AgriTrust** addresses the three of these that are genuinely solvable in a hackathon timeline — price transparency, aggregation leverage, and a quality-trust signal — and designs (without over-claiming to build) the trust/verification and settlement layers needed for a production version.
+**KrishiDrishti** addresses the three of these that are genuinely solvable in a hackathon timeline — price transparency, aggregation leverage, and a quality-trust signal — and designs (without over-claiming to build) the trust/verification and settlement layers needed for a production version.
 
 ---
 
@@ -260,7 +260,7 @@ Note what's gone from the original: no `LAND_HOLDINGS` cadastral fields, no `ESC
 ```mermaid
 sequenceDiagram
     actor Farmer
-    participant App as AgriTrust
+    participant App as KrishiDrishti
     actor Buyer
 
     Farmer->>App: List lot (crop, quantity, location)

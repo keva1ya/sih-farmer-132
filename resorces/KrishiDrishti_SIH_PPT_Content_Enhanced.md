@@ -1,4 +1,4 @@
-# AgriTrust — Enhanced SIH PPT Content (matched to the Saarthi reference deck's structure)
+# KrishiDrishti — Enhanced SIH PPT Content (matched to the Saarthi reference deck's structure)
 
 This version upgrades every slide to match what the reference deck does well: a real system architecture with role-based access, a detailed process-flow diagram, cited supporting facts, a benefits tree, and a head-to-head competitor table.
 
@@ -7,7 +7,7 @@ This version upgrades every slide to match what the reference deck does well: a 
 ## Slide 2 — Idea Title & Proposed Solution
 
 **Idea Title:**
-> **AgriTrust — Net-Realization Price Intelligence & Verified Buyer-Matching for Smallholder Farmers**
+> **KrishiDrishti — Net-Realization Price Intelligence & Verified Buyer-Matching for Smallholder Farmers**
 
 **Proposed Solution (left column bullets):**
 
@@ -17,7 +17,7 @@ This version upgrades every slide to match what the reference deck does well: a 
 - **Deterministic Quality Check:** Coin-calibrated computer-vision grading gives an explainable A/B/C grade instead of a subjective trader's eyeball estimate or an unexplainable black-box AI score.
 - **Verified Buyer Matching:** Rule-based scoring connects graded, pooled lots to institutional buyers by commodity, grade, and location.
 
-**Innovation vs. invention:** eNAM already solved *price reporting*. AgriTrust is the missing *decision layer* on top of it — nobody currently combines net-realization pricing, a predictive sell-window, and a transparent pooling simulator in one farmer-facing tool.
+**Innovation vs. invention:** eNAM already solved *price reporting*. KrishiDrishti is the missing *decision layer* on top of it — nobody currently combines net-realization pricing, a predictive sell-window, and a transparent pooling simulator in one farmer-facing tool.
 
 **Diagram: System Architecture (right side) — prompt for Draw.io/Figma/AI diagram tool:**
 > "Create a clean system architecture diagram on a white background, top section and bottom section. Top-left: a 'Client System' box with a mobile phone icon and browser icon, labeled 'Farmer & FPO App / Buyer Web Portal', with a two-way arrow labeled 'Req/Res' pointing right to a circular 'Authentication' icon, which connects to a central 'Web Application / Server' hexagon icon. Top-right: a 'Data Retrieval' label above small icons for a database cylinder, a cloud icon, and a lightning-bolt icon, connected to the server. Below the server, draw a table titled 'Restricted Functional Modules' with rows for five roles — Farmer, FPO Admin, Buyer, Institute/Govt Admin, Visitor — each with two columns showing which modules they can access (Listing & Pricing, Pooling, Buyer Discovery, Compliance Dashboard), using a filled circle for full access and a half-filled circle for partial access. To the right of that table, a vertical list of 'Services' with small labeled icons: Maps/Distance API, Agmarknet API, IMD Weather API, SMS/WhatsApp Gateway, Cloud Storage. Use a muted color palette (navy, teal, gray), flat icons, no shadows or gradients, clear thin connecting lines with arrowheads."
@@ -78,7 +78,7 @@ This version upgrades every slide to match what the reference deck does well: a 
 ## Slide 5 — Impact and Benefits
 
 **Diagram: Benefits Tree — prompt for Draw.io/Figma/AI diagram tool:**
-> "Create a simple top-down tree diagram on a white background. A single orange rounded rectangle at the top labeled 'Benefits of AgriTrust' with a checkmark icon, connecting down via 4 lines to 4 boxes in a row: 'Social' (yellow, people icon), 'Economic' (pink, coin icon), 'Institutional' (blue, building icon), 'Technological' (teal, gear icon). Flat minimal style, evenly spaced, thin connecting lines, no shadows or gradients."
+> "Create a simple top-down tree diagram on a white background. A single orange rounded rectangle at the top labeled 'Benefits of KrishiDrishti' with a checkmark icon, connecting down via 4 lines to 4 boxes in a row: 'Social' (yellow, people icon), 'Economic' (pink, coin icon), 'Institutional' (blue, building icon), 'Technological' (teal, gear icon). Flat minimal style, evenly spaced, thin connecting lines, no shadows or gradients."
 
 **Benefits of the solution (right column, by category):**
 
@@ -89,7 +89,7 @@ This version upgrades every slide to match what the reference deck does well: a 
 
 **Economic:**
 - Modeled FPO pooling shows a **+14% institutional price premium** and **65% lower per-quintal freight** versus solo sale — a **₹5,580 net gain on a 15-quintal lot** in our worked example.
-- Real-world precedent: NABARD-tracked FPOs already show 14%–60% income growth post-formation; AgriTrust's pricing and pooling tools aim to compound this further.
+- Real-world precedent: NABARD-tracked FPOs already show 14%–60% income growth post-formation; KrishiDrishti's pricing and pooling tools aim to compound this further.
 - Reduces post-harvest loss by guiding better sell-timing decisions.
 
 **Institutional:**
@@ -105,7 +105,7 @@ This version upgrades every slide to match what the reference deck does well: a 
 - **Reduced distress sales:** Predictive sell-window advisory could shift a meaningful share of "sell immediately" decisions to a better-timed sale, based on the same economic logic already validated in futures-price-discovery research.
 - **Stronger FPO throughput:** A working trade-off simulator could increase voluntary pooling participation by making the ₹ benefit visible and concrete rather than anecdotal.
 
-*(Be explicit in your pitch that these are modeled projections grounded in real eNAM/NABARD data, not yet a field-measured result of AgriTrust itself — that honesty is what separates this from an inflated claim.)*
+*(Be explicit in your pitch that these are modeled projections grounded in real eNAM/NABARD data, not yet a field-measured result of KrishiDrishti itself — that honesty is what separates this from an inflated claim.)*
 
 ---
 
@@ -124,7 +124,7 @@ This version upgrades every slide to match what the reference deck does well: a 
 
 **Comparison with Existing Systems:**
 
-| Feature | AgriTrust | eNAM | DeHaat | Ninjacart |
+| Feature | KrishiDrishti | eNAM | DeHaat | Ninjacart |
 |---|---|---|---|---|
 | Net-Realization pricing (not raw price) | ✅ | ❌ | ❌ | ❌ |
 | Predictive sell-window advisory | ✅ | ❌ | ❌ | ❌ |
