@@ -45,6 +45,14 @@ FOREIGN_MATTER_MAX_AREA_MM2 = 8.0
 PAPER_SATURATION_MAX = 60
 PAPER_VALUE_MIN = 180
 PAPER_MIN_AREA_RATIO = 0.15
+# `_detect_and_crop_paper`'s relaxation ladder: fractions of the way from the
+# strict (PAPER_VALUE_MIN, PAPER_SATURATION_MAX) band toward the per-photo
+# Otsu-derived bound. 0.0 -- the strict band itself -- is tried first and is
+# sufficient for the overwhelming majority of photos; 1.0 is the full adaptive
+# bound. Five steps is enough headroom to recover a sheet a uniform colour
+# cast or dim light pushed out of the strict band without relaxing further
+# than whatever step first finds a valid region.
+PAPER_THRESHOLD_RELAXATION_STEPS: tuple[float, ...] = (0.0, 0.25, 0.5, 0.75, 1.0)
 
 # --- Sheet recovery on a creased sheet -------------------------------------
 # Keeping only the largest bright component loses a creased sheet: crease
@@ -367,7 +375,41 @@ def _erode_by_radius(distance: np.ndarray, radius: int) -> np.ndarray:
     return np.uint8(distance >= radius) * 255
 
 
-def _detect_and_crop_paper(image: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def _adaptive_paper_thresholds(hsv: np.ndarray) -> tuple[float, float]:
+    """
+    Derive this photo's own paper V-floor and S-ceiling instead of a fixed band.
+
+    TEMPORARY: this is wired in as the PRIMARY detection path (not a fallback
+    behind the fixed `PAPER_VALUE_MIN`/`PAPER_SATURATION_MAX` band) so it can be
+    exercised directly against real photos. It is meant to move behind the fixed
+    band as a fallback once validated.
+
+    `cv2.threshold(..., THRESH_OTSU)` finds the value that best splits a channel
+    into two populations, but it has no notion of which side is "paper" -- on a
+    sheet where a colour cast has pushed every paper pixel's saturation well
+    above the old fixed ceiling, Otsu on S locks onto the small coin cluster
+    (S~0) instead of separating paper from grain, because that is the split with
+    the least intra-class variance, not the semantically correct one.
+
+    Paper is the dominant class on any accepted sheet (`_detect_and_crop_paper`
+    already requires at least `PAPER_MIN_AREA_RATIO`, 15%, of the frame, and a
+    well-composed photo is usually far more than that), so the fix is to always
+    keep whichever side of the split has the larger population, rather than
+    always keeping "below" for S and "above" for V. That is what turns a
+    degenerate split (majority above the S cutoff) into "S no longer
+    constrains anything" instead of "almost nothing is paper".
+    """
+    v = hsv[:, :, 2]
+    s = hsv[:, :, 1]
+    v_otsu, _ = cv2.threshold(v, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    s_otsu, _ = cv2.threshold(s, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+    v_min = float(v_otsu) if np.count_nonzero(v >= v_otsu) >= np.count_nonzero(v < v_otsu) else 0.0
+    s_max = float(s_otsu) if np.count_nonzero(s <= s_otsu) >= np.count_nonzero(s > s_otsu) else 255.0
+    return v_min, s_max
+
+
+def _detect_and_crop_paper(image: np.ndarray) -> tuple[np.ndarray, np.ndarray, float]:
     """
     Detect the white paper, recover the whole sheet, and crop to it.
 
@@ -376,29 +418,84 @@ def _detect_and_crop_paper(image: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     white pixels themselves -- including when crease shadows have carved the
     bright evidence into fragments and pockets, which is what
     `_sheet_region_contour` repairs.
+
+    Also returns the saturation ceiling actually used to accept a pixel as
+    paper. `_saturation_foreground` must never call a pixel "grain" at a
+    saturation this function already called "paper" -- see its docstring -- so
+    that ceiling has to be threaded through rather than assumed to be the
+    `PAPER_SATURATION_MAX` constant, now that it can vary per photo.
+
+    Strict-first, adaptive-fallback: this is a relaxation ladder
+    (`PAPER_THRESHOLD_RELAXATION_STEPS`), not a single jump to
+    `_adaptive_paper_thresholds`'s Otsu split. It tries the strict fixed band
+    (`PAPER_VALUE_MIN`, `PAPER_SATURATION_MAX`) first and only relaxes toward
+    the Otsu-derived bound in small steps, stopping at the first (least
+    permissive) step that finds a valid sheet. The overwhelming majority of
+    photos are handled entirely by the first, strict step; the ladder only
+    engages for a photo the strict band rejects outright (dim lighting, a
+    uniform colour cast).
+
+    The ladder -- rather than jumping straight to the Otsu bound on every
+    photo -- exists because that jump regressed a real photo
+    (`wheatsheetplain.jpeg`) the strict band alone already handled: Otsu on V
+    separates "coin/shadow" from "everything else", with no notion of
+    "background" as a third class, so a background merely brighter than the
+    coin -- not necessarily brighter than the paper -- lands on paper's side of
+    that split and gets swallowed into the crop wholesale. The inflated
+    `paper_area` then widens the coin search's Hough radius window enough that
+    the real coin was never returned among the results, raising
+    `CoinNotDetectedError` on a photo where the coin was plainly visible.
+    Stepping from strict and stopping at the first success means a photo the
+    strict band already handles is never touched by that failure mode, while a
+    photo the strict band rejects outright still gets the full benefit of the
+    adaptive fallback.
     """
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    paper_pixels = cv2.inRange(
-        hsv,
-        np.array([0, 0, PAPER_VALUE_MIN], dtype=np.uint8),
-        np.array([179, PAPER_SATURATION_MAX, 255], dtype=np.uint8),
-    )
-
+    v_min_bound, s_max_bound = _adaptive_paper_thresholds(hsv)
     close_kernel = _scaled_odd_kernel(image.shape[:2], 0.01, 31)
     open_kernel = _scaled_odd_kernel(image.shape[:2], 0.003, 9)
-    cleaned = cv2.morphologyEx(paper_pixels, cv2.MORPH_CLOSE, close_kernel, iterations=2)
-    cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_OPEN, open_kernel, iterations=1)
-
-    label_count, labels, stats, _ = cv2.connectedComponentsWithStats(cleaned, 8)
-    if label_count <= 1:
-        raise PaperNotDetectedError("White paper could not be detected in the image.")
-
-    component_areas = stats[1:, cv2.CC_STAT_AREA]
-    best_label = int(np.argmax(component_areas)) + 1
-    best_area = int(stats[best_label, cv2.CC_STAT_AREA])
     image_area = int(image.shape[0] * image.shape[1])
-    # Assumption: a confident sheet occupies at least 15% of the input frame.
-    if best_area < image_area * PAPER_MIN_AREA_RATIO:
+
+    cleaned = labels = stats = None
+    best_label = None
+    best_area = 0
+    s_max = float(PAPER_SATURATION_MAX)
+    saw_any_component = False
+
+    for fraction in PAPER_THRESHOLD_RELAXATION_STEPS:
+        v_min = PAPER_VALUE_MIN - fraction * max(0.0, PAPER_VALUE_MIN - v_min_bound)
+        s_max = PAPER_SATURATION_MAX + fraction * max(0.0, s_max_bound - PAPER_SATURATION_MAX)
+        paper_pixels = cv2.inRange(
+            hsv,
+            np.array([0, 0, v_min], dtype=np.uint8),
+            np.array([179, s_max, 255], dtype=np.uint8),
+        )
+        candidate_cleaned = cv2.morphologyEx(paper_pixels, cv2.MORPH_CLOSE, close_kernel, iterations=2)
+        candidate_cleaned = cv2.morphologyEx(
+            candidate_cleaned, cv2.MORPH_OPEN, open_kernel, iterations=1
+        )
+
+        label_count, candidate_labels, candidate_stats, _ = cv2.connectedComponentsWithStats(
+            candidate_cleaned, 8
+        )
+        if label_count <= 1:
+            continue
+        saw_any_component = True
+
+        component_areas = candidate_stats[1:, cv2.CC_STAT_AREA]
+        candidate_best_label = int(np.argmax(component_areas)) + 1
+        candidate_best_area = int(candidate_stats[candidate_best_label, cv2.CC_STAT_AREA])
+        # Assumption: a confident sheet occupies at least 15% of the input frame.
+        if candidate_best_area < image_area * PAPER_MIN_AREA_RATIO:
+            continue
+
+        cleaned, labels, stats = candidate_cleaned, candidate_labels, candidate_stats
+        best_label, best_area = candidate_best_label, candidate_best_area
+        break
+
+    if best_label is None:
+        if not saw_any_component:
+            raise PaperNotDetectedError("White paper could not be detected in the image.")
         raise PaperNotDetectedError(
             "White paper region is too small or weak to measure grains reliably."
         )
@@ -421,7 +518,7 @@ def _detect_and_crop_paper(image: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
     cropped_image = image[y : y + height, x : x + width].copy()
     cropped_mask = full_paper_region[y : y + height, x : x + width].copy()
-    return cropped_image, cropped_mask
+    return cropped_image, cropped_mask, s_max
 
 
 def _contour_circularity(contour: np.ndarray) -> float:
@@ -806,17 +903,19 @@ def _flatfield_foreground(gray: np.ndarray, paper_mask: np.ndarray) -> np.ndarra
     return foreground
 
 
-def _saturation_foreground(hsv: np.ndarray, paper_mask: np.ndarray) -> np.ndarray:
+def _saturation_foreground(
+    hsv: np.ndarray, paper_mask: np.ndarray, paper_saturation_ceiling: float
+) -> np.ndarray:
     """
     Threshold saturation against the sheet's own saturation, not an absolute level.
 
     Colour still matters after flat-fielding: an object can be as bright as paper
     and still not be paper, so a saturation term stays ORed into the foreground.
     But the old form, `S > 25`, was an absolute cutoff sitting *inside* the range
-    `_detect_and_crop_paper` accepts as paper (`S <= PAPER_SATURATION_MAX`, 60).
-    A warm bulb that lifted the sheet from S=22 to S=27 -- a mild, ordinary cast --
-    therefore satisfied both rules at once and marked the entire sheet foreground.
-    Flat-fielding could not rescue it because the term is ORed in afterwards.
+    `_detect_and_crop_paper` accepts as paper. A warm bulb that lifted the sheet
+    from S=22 to S=27 -- a mild, ordinary cast -- therefore satisfied both rules
+    at once and marked the entire sheet foreground. Flat-fielding could not
+    rescue it because the term is ORed in afterwards.
 
     Two things make that impossible now:
 
@@ -826,11 +925,14 @@ def _saturation_foreground(hsv: np.ndarray, paper_mask: np.ndarray) -> np.ndarra
        median tracks the paper and ignores them (a mean would be dragged by them).
        A colour cast moves the paper and the cutoff together instead of the cast
        sliding the paper across a fixed line.
-    2. The cutoff can never drop below `PAPER_SATURATION_MAX`. That is the
-       structural half: paper detection accepts a pixel only when `S <= 60`, and
-       this rule calls a pixel foreground only when `S > cutoff >= 60`, so no
-       pixel can satisfy both rules however the image is lit. The two constants
-       can no longer disagree about what white paper is.
+    2. The cutoff can never drop below `paper_saturation_ceiling`, the ACTUAL
+       ceiling `_detect_and_crop_paper` used to accept a pixel as paper for this
+       photo (no longer always the `PAPER_SATURATION_MAX` constant, now that
+       paper detection calibrates its own ceiling per image). That is the
+       structural half: paper detection accepts a pixel only when
+       `S <= paper_saturation_ceiling`, and this rule calls a pixel foreground
+       only when `S > cutoff >= paper_saturation_ceiling`, so no pixel can
+       satisfy both rules however the image is lit.
 
     Real wheat is far outside the window either way -- the synthetic grains here
     sit near S=174, and dull real grain well above 60 -- so the term keeps doing
@@ -844,13 +946,15 @@ def _saturation_foreground(hsv: np.ndarray, paper_mask: np.ndarray) -> np.ndarra
 
     observed_paper_level = float(np.median(paper_saturation))
     cutoff = max(
-        float(PAPER_SATURATION_MAX),
+        float(paper_saturation_ceiling),
         observed_paper_level + GRAIN_SATURATION_MARGIN_OVER_PAPER,
     )
     return np.uint8(saturation > cutoff) * 255
 
 
-def _foreground_mask(image: np.ndarray, paper_mask: np.ndarray) -> np.ndarray:
+def _foreground_mask(
+    image: np.ndarray, paper_mask: np.ndarray, paper_saturation_ceiling: float
+) -> np.ndarray:
     """
     Everything on the sheet that is not the sheet: the coin, the grains, debris.
 
@@ -876,7 +980,7 @@ def _foreground_mask(image: np.ndarray, paper_mask: np.ndarray) -> np.ndarray:
     # Colour still matters: a saturated object is not paper even when it is as
     # bright as paper, so a saturation term stays ORed in -- but measured against
     # this sheet's own saturation, so a colour cast cannot flip the whole sheet.
-    saturation_foreground = _saturation_foreground(hsv, paper_mask)
+    saturation_foreground = _saturation_foreground(hsv, paper_mask, paper_saturation_ceiling)
 
     foreground = cv2.bitwise_or(flat_foreground, saturation_foreground)
     return cv2.bitwise_and(foreground, paper_mask)
@@ -1199,11 +1303,11 @@ def calibrate_image(image: np.ndarray) -> dict[str, Any]:
     coin's full geometry dict, a filled mask over the coin, and the paper area
     in mm2 (needed downstream for foreign-matter percentage).
     """
-    cropped_image, paper_mask = _detect_and_crop_paper(image)
+    cropped_image, paper_mask, paper_saturation_ceiling = _detect_and_crop_paper(image)
     # Computed once and shared: the coin search and the grain segmentation ask
     # different questions of the same foreground evidence, and flat-fielding it
     # is the most expensive step in the module.
-    foreground = _foreground_mask(cropped_image, paper_mask)
+    foreground = _foreground_mask(cropped_image, paper_mask, paper_saturation_ceiling)
     coin = _find_best_coin_candidate(cropped_image, paper_mask, foreground)
     coin_mask = _create_coin_mask(
         cropped_image.shape[:2],

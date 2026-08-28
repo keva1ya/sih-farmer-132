@@ -8,7 +8,7 @@ __pycache__/
 venv/
 .pytest_cache/
 start.ps1
-/tests/
+cv/tests/
 uploaded_videos/
 docs/
 .superpowers/

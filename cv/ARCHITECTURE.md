@@ -236,9 +236,32 @@ carries the exception's own message through verbatim as `reason`.
 
 ### 6.2 Paper detection & crop (`_detect_and_crop_paper`)
 
-1. Threshold the image in HSV for "paper-like" pixels: low saturation
-   (`S <= PAPER_SATURATION_MAX = 60`), high value (`V >= PAPER_VALUE_MIN =
-   180`).
+1. **Strict-first, adaptive-fallback threshold.** Threshold the image in HSV
+   for "paper-like" pixels: low saturation (`S <= PAPER_SATURATION_MAX = 60`),
+   high value (`V >= PAPER_VALUE_MIN = 180`). This fixed band is tried first
+   and handles the overwhelming majority of photos on its own. If it fails to
+   find a component covering at least 15% of the frame, `_detect_and_crop_paper`
+   steps through `PAPER_THRESHOLD_RELAXATION_STEPS` (fractions 0.0 → 1.0),
+   relaxing `V`/`S` toward a per-photo bound from `_adaptive_paper_thresholds`
+   (Otsu's method on V and on S, keeping whichever side of each split has the
+   larger pixel population — paper is the dominant class on any accepted
+   sheet), and stops at the first, least-permissive step that finds a valid
+   region. The function returns the saturation ceiling it actually used
+   alongside the crop and mask (see §6.3).
+
+   This ladder — rather than jumping straight to the Otsu bound on every photo
+   — exists because that jump regressed a real photo the strict band alone
+   already handled: Otsu on V separates "coin/shadow" from "everything else",
+   with no notion of "background" as a third class, so a background merely
+   brighter than the coin (not necessarily brighter than the paper) lands on
+   paper's side of the split and gets swallowed into the crop wholesale. The
+   inflated `paper_area` then widens the coin search's Hough radius window
+   (§6.4) enough that the real coin is never returned among the results,
+   raising `CoinNotDetectedError` on a photo where the coin was plainly
+   visible. Stepping from strict and stopping at the first success means a
+   photo the strict band already handles is never touched by that failure
+   mode, while a photo the strict band rejects outright (dim lighting, a
+   uniform colour cast) still gets the full benefit of the adaptive fallback.
 2. Morphological close (bridge small gaps) then open (remove speckle), sizes
    scaled to image resolution via `_scaled_odd_kernel`.
 3. Connected-components; take the largest bright blob. Reject if it's under
@@ -274,11 +297,17 @@ unification is what let the module handle a crumbled/shadowed sheet at all).
   computed *only over paper pixels*, capped so it never sits closer than 12
   levels (`GRAIN_FLATFIELD_MIN_DROP`) below the flattened paper level — this
   stops Otsu from carving a grain-free, noise-only sheet in half.
-- **Saturation term (`_saturation_foreground`):** a pixel is foreground if
-  its saturation exceeds `max(60, this image's own median paper
-  saturation + 25)`. Measuring relative to the sheet's own observed
-  saturation (rather than a fixed absolute cutoff) is what stops a mild warm
-  light cast from turning the whole sheet into "foreground."
+- **Saturation term (`_saturation_foreground`):** a pixel is foreground if its
+  saturation exceeds `max(paper_saturation_ceiling, this image's own median
+  paper saturation + 25)`, where `paper_saturation_ceiling` is the *actual* `S`
+  ceiling `_detect_and_crop_paper` used for this photo (§6.2) — no longer
+  always the `PAPER_SATURATION_MAX` constant, now that paper detection can
+  relax its own ceiling per photo. Measuring relative to the sheet's own
+  observed saturation (rather than a fixed absolute cutoff) is what stops a
+  mild warm light cast from turning the whole sheet into "foreground," and
+  threading through the actual ceiling (rather than assuming the constant) is
+  what keeps this term structurally unable to disagree with paper detection
+  about what counts as paper, however far the fallback relaxed.
 - Foreground = flat-field term **OR** saturation term, masked to the paper
   region only.
 
