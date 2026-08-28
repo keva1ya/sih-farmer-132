@@ -1,4 +1,4 @@
-# AgriTrust — Build Plan (Current Plan & Future Plan)
+# KrishiDrishti — Build Plan (Current Plan & Future Plan)
 
 **Team:** 6 people, 1 per role · **Client:** Plain React SPA (no PWA, no offline) · **Auth:** None — role-switcher only · **Escrow:** Mocked state machine (no real payment gateway) · **Backend:** FastAPI · **DB:** Supabase Postgres + PostGIS
 

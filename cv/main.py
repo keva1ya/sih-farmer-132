@@ -13,7 +13,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from cv.config import (
     ALLOWED_EXTENSIONS,
@@ -21,6 +21,7 @@ from cv.config import (
     MAX_FILE_SIZE_MB,
     MAX_VIDEO_SIZE_MB,
 )
+from cv.debug_view import build_debug_report
 from cv.pipeline import run_pipeline
 
 app = FastAPI(
@@ -111,6 +112,42 @@ async def analyze_grain(
         # Pipeline-level errors (blurry, tilted, no coin, etc.)
         # These are user-actionable, not server errors → 422
         return JSONResponse(status_code=422, content=result)
+
+
+@app.post("/analyze/debug", response_class=HTMLResponse)
+async def analyze_grain_debug(
+    file: UploadFile = File(..., description="Grain photo (JPEG/PNG, max 10MB)"),
+    commodity: str = Query(
+        default="wheat",
+        description="Commodity name for AGMARK threshold lookup",
+    ),
+):
+    """
+    Human-readable debug view of the CV pipeline.
+
+    Runs the same stages as /analyze but returns an HTML page showing the
+    binary mask / contour overlay produced at each stage (paper detection,
+    foreground mask, coin detection, grain contours, discoloration overlay)
+    instead of only the final JSON grade. If the pipeline would fail at some
+    stage, the page still shows everything that succeeded up to that point.
+    """
+    if file.content_type not in ALLOWED_EXTENSIONS:
+        return HTMLResponse(
+            content="<p>The uploaded file must be a JPEG or PNG image.</p>",
+            status_code=400,
+        )
+
+    image_bytes = await file.read()
+
+    file_size_mb = len(image_bytes) / (1024 * 1024)
+    if file_size_mb > MAX_FILE_SIZE_MB:
+        return HTMLResponse(
+            content=f"<p>The image exceeds the {MAX_FILE_SIZE_MB} MB size limit.</p>",
+            status_code=400,
+        )
+
+    report_html = build_debug_report(image_bytes, commodity=commodity, source_name=file.filename)
+    return HTMLResponse(content=report_html, status_code=200)
 
 
 @app.post("/upload-video")

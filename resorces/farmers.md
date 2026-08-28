@@ -1,4 +1,4 @@
-# <placeholder_name>: Farm-to-Fork Market Intelligence, Verification & Dynamic Aggregation Protocol
+# KrishiDrishti: Farm-to-Fork Market Intelligence, Verification & Dynamic Aggregation Protocol
 ## Master System Specification, Functional Architecture & Deep-Dive Blueprint
 
 ---
@@ -11,7 +11,7 @@ Smallholder farmers and Farmer Producer Organizations (FPOs) face severe systemi
 * **Weak Bargaining Power:** Fragmented sub-scale lots (5–20 quintals) fail to attract institutional bulk buyers who require 200–500 quintal lots of uniform grade.
 * **Counterparty & Settlement Risk:** Payment delays, absence of escrow protection, and speculative ghost listings by unauthorized middlemen.
 
-**AgriTrust** is an end-to-end decentralized market intelligence, verification, and transaction-enablement platform engineered to resolve these bottlenecks through:
+**KrishiDrishti** is an end-to-end decentralized market intelligence, verification, and transaction-enablement platform engineered to resolve these bottlenecks through:
 1. **Multi-Tiered Verification & Anti-Fraud Architecture:** Hardware-bound geofencing, simulated API Setu/NGDRS land record sandboxes, dynamic yield caps accounting for carryover stock/informal pooling, and FPO peer-endorsements.
 2. **Deterministic Computer Vision Assaying:** Physical coin-calibrated reference scale detection for automated morphological grain analysis and AGMARK grading.
 3. **Net-Realization & Predictive Sell-Window Engine:** Spatial logistics optimization, holding cost evaluation, and seasonal price forecasting.
@@ -67,7 +67,7 @@ graph TB
 
 ### Module 1: Multi-Tier Verification & Anti-Fraud Engine
 
-To eliminate ghost listings and speculative arbitrage without imposing prohibitive identity hurdles on smallholders, AgriTrust uses a progressive verification pipeline.
+To eliminate ghost listings and speculative arbitrage without imposing prohibitive identity hurdles on smallholders, KrishiDrishti uses a progressive verification pipeline.
 
 Code snippet
 
@@ -128,7 +128,7 @@ $$\text{Max Allowed Quantity (Quintals)} = \Big( \text{Cultivable Area (Ha)} \ti
 
 ### Module 2: Deterministic Computer Vision (CV) Quality Assaying
 
-Rather than relying on opaque deepfake/AI image classifiers that fail under variable rural lighting, AgriTrust utilizes a **deterministic physical calibration and contour analysis pipeline**.
+Rather than relying on opaque deepfake/AI image classifiers that fail under variable rural lighting, KrishiDrishti utilizes a **deterministic physical calibration and contour analysis pipeline**.
 
 Code snippet
 
@@ -168,7 +168,7 @@ flowchart TD
 
 ### Module 3: Market Intelligence & Net-Realization Optimization
 
-Raw mandi prices displayed on traditional portals mislead farmers because they ignore transportation friction, labor, market taxes, and warehouse holding costs. AgriTrust computes true **Net Realization**.
+Raw mandi prices displayed on traditional portals mislead farmers because they ignore transportation friction, labor, market taxes, and warehouse holding costs. KrishiDrishti computes true **Net Realization**.
 
 Code snippet
 
@@ -326,7 +326,7 @@ sequenceDiagram
     autonumber
     actor Farmer as Farmer (Mobile App)
     actor FPO as FPO Admin
-    participant App as AgriTrust System
+    participant App as KrishiDrishti System
     actor Buyer as Institutional Buyer (Web)
 
     Note over Farmer,App: Stage 1: Registration & Listing

@@ -182,7 +182,10 @@ sections:
     metric can only ever push the grade down to `"C"`, never up past `"A"`.
   - Geometric metrics (length/width/area/ratio) bottom out at grade `"C"`,
     never `"Reject"` — a small/dense/short grain is substandard, not
-    contamination. Only `foreign_matter_pct` can produce `"Reject"`.
+    contamination. `broken_pct`, `discolored_pct`, and `foreign_matter_pct`
+    can all produce `"Reject"`: damaged/discoloration above 3.5% or foreign
+    matter above 1.5% means the lot is rejected outright, not merely
+    downgraded.
   - Adding a new commodity = adding a new dict entry with the same 7 keys.
 - **`GRADE_RANK`:** `{"A": 0, "B": 1, "C": 2, "Reject": 3}` — used to find the
   worst grade across all metrics.

@@ -13,6 +13,7 @@ class Measurements(BaseModel):
 
     avg_length_mm: float = Field(..., description="Average grain length in mm")
     avg_width_mm: float = Field(..., description="Average grain width in mm")
+    avg_area_mm2: float = Field(..., description="Average grain area in mm^2")
     avg_lw_ratio: float = Field(..., description="Average length/width ratio")
     median_length_mm: float = Field(..., description="Median grain length in mm")
     broken_pct: float = Field(..., description="Percentage of broken grains")
@@ -24,7 +25,9 @@ class PerMetricGrades(BaseModel):
     """Grade breakdown per individual AGMARK parameter."""
 
     length: str = Field(..., description="Grade based on average length")
-    lw_ratio: str = Field(..., description="Grade based on length/width ratio")
+    width: str = Field(..., description="Grade based on average width")
+    area: str = Field(..., description="Grade based on average grain area")
+    lw_ratio: str = Field(..., description="Grade based on length/width aspect-ratio band")
     broken: str = Field(..., description="Grade based on broken kernel percentage")
     discolored: str = Field(..., description="Grade based on discoloration percentage")
     foreign_matter: str = Field(..., description="Grade based on foreign matter percentage")
@@ -51,7 +54,8 @@ class AnalyzeErrorResponse(BaseModel):
         ...,
         description=(
             "Error code: too_blurry | too_tilted | coin_not_found | "
-            "coin_not_recognized | too_few_grains | invalid_format | file_too_large"
+            "paper_not_detected | too_few_grains | invalid_format | "
+            "file_too_large | processing_error"
         ),
     )
     reason: str = Field(..., description="Deterministic explanation for the failure")

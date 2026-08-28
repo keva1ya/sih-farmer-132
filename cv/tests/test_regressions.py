@@ -10,6 +10,7 @@ from cv.steps.wheat_measurement import (
     PaperNotDetectedError,
     CoinTiltedError,
     ImageLoadError,
+    COIN_TILT_MIN_AXIS_RATIO,
     _measure_wheat_grains_from_image,
 )
 
@@ -26,11 +27,20 @@ WHEAT_BGR = tuple(
 )
 
 
-def build_scene(n_grains=30, paper=(255, 255, 255), clusters=0, ring=False, crescent=False):
-    """Synthetic top-down sheet: white paper, a Rs 10 coin, and elliptical grains."""
+def build_scene(
+    n_grains=30, paper=(255, 255, 255), clusters=0, ring=False, crescent=False, coin_tilt_ratio=1.0
+):
+    """Synthetic top-down sheet: white paper, a Rs 10 coin, and elliptical grains.
+
+    `coin_tilt_ratio` squashes the coin's vertical axis (minor/major of the
+    fitted ellipse) to simulate a camera angle away from top-down; 1.0 draws a
+    perfect circle.
+    """
     image = np.full((1100, 1600, 3), paper, dtype=np.uint8)
-    cv2.circle(image, (1300, 250), 135, (130, 130, 130), -1)
-    cv2.circle(image, (1300, 250), 80, (170, 170, 170), -1)
+    outer_axes = (135, int(135 * coin_tilt_ratio))
+    inner_axes = (80, int(80 * coin_tilt_ratio))
+    cv2.ellipse(image, (1300, 250), outer_axes, 0, 0, 360, (130, 130, 130), -1)
+    cv2.ellipse(image, (1300, 250), inner_axes, 0, 0, 360, (170, 170, 170), -1)
 
     positions = [(130 + col * 155, 150 + row * 165) for row in range(5) for col in range(6)]
     for idx, center in enumerate(positions[:n_grains]):
@@ -69,6 +79,38 @@ def test_ratio_is_part_of_worst_metric_grade():
     assert grade == "C"
 
 
+@pytest.mark.parametrize(
+    "metric, response_key, ceiling",
+    [
+        ("broken_pct", "broken", 3.5),
+        ("discolored_pct", "discolored", 3.5),
+        ("foreign_matter_pct", "foreign_matter", 1.5),
+    ],
+)
+def test_damage_and_contamination_reject_past_their_ceiling(metric, response_key, ceiling):
+    """Damage/discoloration must Reject above 3.5%, foreign matter above 1.5% --
+    not silently cap at "C" the way an earlier revision of these thresholds did."""
+    baseline = dict(
+        avg_length_mm=7.0,
+        avg_width_mm=3.6,
+        avg_area_mm2=20.0,
+        avg_lw_ratio=2.0,
+        broken_pct=0.0,
+        discolored_pct=0.0,
+        foreign_matter_pct=0.0,
+    )
+
+    baseline[metric] = ceiling
+    grade, metric_grades = compute_grade(**baseline)
+    assert metric_grades[response_key] != "Reject"
+    assert grade != "Reject"
+
+    baseline[metric] = ceiling + 0.01
+    grade, metric_grades = compute_grade(**baseline)
+    assert metric_grades[response_key] == "Reject"
+    assert grade == "Reject"
+
+
 def test_public_result_matches_the_specified_contract():
     result = _measure_wheat_grains_from_image(build_scene())
 
@@ -102,6 +144,25 @@ def test_shadow_artifacts_are_rejected():
     assert result["summary"]["count"] == 30
     assert result["_excluded_ring"] == 1
     assert result["_excluded_low_solidity"] == 1
+
+
+def test_tilted_coin_is_rejected():
+    """Regression: this is the exact bug the pipeline was rewired to fix. A coin
+    photographed well off top-down (axis ratio far below COIN_TILT_MIN_AXIS_RATIO)
+    must be rejected as CoinTiltedError -- not miscalibrated, not misreported as a
+    missing coin."""
+    with pytest.raises(CoinTiltedError):
+        _measure_wheat_grains_from_image(build_scene(coin_tilt_ratio=COIN_TILT_MIN_AXIS_RATIO - 0.25))
+
+
+def test_near_top_down_coin_still_calibrates():
+    """A coin photographed close to top-down (axis ratio just above the tilt
+    floor) must calibrate normally, not be falsely flagged as tilted."""
+    result = _measure_wheat_grains_from_image(
+        build_scene(coin_tilt_ratio=min(COIN_TILT_MIN_AXIS_RATIO + 0.02, 1.0))
+    )
+
+    assert result["summary"]["count"] == 30
 
 
 def test_touching_clusters_are_excluded_without_gating_the_count():

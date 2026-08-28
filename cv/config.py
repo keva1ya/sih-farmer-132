@@ -15,31 +15,22 @@ ALLOWED_EXTENSIONS: set[str] = {"image/jpeg", "image/png"}
 # ---------------------------------------------------------------------------
 # Blur Detection (Step 1)
 # ---------------------------------------------------------------------------
-BLUR_THRESHOLD: float = 30.0  # Laplacian variance; below = too blurry
+BLUR_THRESHOLD: float = 16.0  # Laplacian variance; below = too blurry
 
 # ---------------------------------------------------------------------------
-# Coin Calibration (Step 2)
+# Coin Calibration & Segmentation (Steps 2 and 5)
 # ---------------------------------------------------------------------------
-COIN_DIAMETER_MM: float = 27.0  # ₹10 bimetallic outer ring (RBI verified)
-COIN_INNER_OUTER_RATIO: float = 1.35  # outer / inner ≈ 27mm / 20mm
-COIN_RATIO_TOLERANCE: float = 0.10  # ±10% tolerance on the ratio check
-TILT_THRESHOLD: float = 0.85  # min aspect ratio of fitted ellipse (1.0 = perfect circle)
-
-# HoughCircles parameters (tuned for 1920px-wide images)
-HOUGH_DP: float = 1.2
-HOUGH_MIN_DIST: int = 100
-HOUGH_PARAM1: int = 100  # Canny upper threshold
-HOUGH_PARAM2: int = 40   # Accumulator threshold (lower = more sensitive)
-HOUGH_MIN_RADIUS: int = 40
-HOUGH_MAX_RADIUS: int = 300
-
-# ---------------------------------------------------------------------------
-# Segmentation (Step 5)
-# ---------------------------------------------------------------------------
-MORPH_KERNEL_SIZE: int = 3  # Kernel for morphological opening
-SOLIDITY_THRESHOLD: float = 0.80  # Contours below this are shadows/artifacts
-MIN_GRAIN_AREA_PX: int = 150  # Contours smaller than this → chaff/foreign matter
-MIN_GRAIN_COUNT: int = 30  # Minimum grains needed for statistical validity
+# These stages now live inside `cv.steps.wheat_measurement`, which owns its own
+# constants (COIN_DIAMETER_MM, COIN_TILT_MIN_AXIS_RATIO, GRAIN_MIN_SOLIDITY,
+# MIN_VALID_GRAIN_COUNT, ...) at module scope. The old config entries here
+# (COIN_DIAMETER_MM, COIN_INNER_OUTER_RATIO, COIN_RATIO_TOLERANCE,
+# TILT_THRESHOLD, the six HOUGH_* values, MORPH_KERNEL_SIZE, SOLIDITY_THRESHOLD,
+# MIN_GRAIN_AREA_PX, MAX_GRAIN_AREA_PX and MIN_GRAIN_COUNT) were reachable only
+# through the retired coin_calibration.py / segmentation.py modules and have
+# been removed. Do NOT reintroduce them as a "source of truth": several
+# disagreed with the live values (TILT_THRESHOLD 0.60 vs the live 0.95,
+# MIN_GRAIN_COUNT 15 vs the live 30), so restoring them would silently change
+# behaviour. Tune the module's own constants instead.
 
 # ---------------------------------------------------------------------------
 # Broken Grain Classification (Step 8)
@@ -51,11 +42,11 @@ BROKEN_THRESHOLD_PCT: float = 0.80  # Grain is "broken" if length < 80% of media
 # ---------------------------------------------------------------------------
 # Healthy wheat HSV range (golden-yellow)
 # NOTE: These are initial estimates — MUST be validated against real photos
-HSV_HEALTHY_H_MIN: int = 15
-HSV_HEALTHY_H_MAX: int = 35
-HSV_HEALTHY_S_MIN: int = 80
+HSV_HEALTHY_H_MIN: int = 10
+HSV_HEALTHY_H_MAX: int = 40
+HSV_HEALTHY_S_MIN: int = 30
 HSV_HEALTHY_S_MAX: int = 255
-HSV_HEALTHY_V_MIN: int = 100
+HSV_HEALTHY_V_MIN: int = 70
 HSV_HEALTHY_V_MAX: int = 255
 
 # ---------------------------------------------------------------------------
@@ -63,10 +54,22 @@ HSV_HEALTHY_V_MAX: int = 255
 # ---------------------------------------------------------------------------
 # Healthy wheat LAB range (warm yellow tones)
 # NOTE: These are initial estimates — MUST be validated against real photos
-LAB_HEALTHY_A_MIN: float = -5.0
-LAB_HEALTHY_A_MAX: float = 15.0
-LAB_HEALTHY_B_MIN: float = 15.0
-LAB_HEALTHY_B_MAX: float = 45.0
+LAB_HEALTHY_A_MIN: float = -10.0
+LAB_HEALTHY_A_MAX: float = 25.0
+LAB_HEALTHY_B_MIN: float = 5.0
+LAB_HEALTHY_B_MAX: float = 55.0
+
+# Discoloration measurement excludes the outermost ring of each grain contour
+# before comparing pixels against the HSV/LAB healthy bands above. Measured on
+# a real photo (wheatsheetplain.jpeg): 100% of flagged "defect" pixels sat
+# within 2px of the contour boundary and 0% were in the interior -- these are
+# anti-aliased edge blending against the white background and specular rim
+# highlights, not grain damage, and they alone read as 3.41% discoloration on
+# a visually clean sample. Excluding this rim from measurement (not loosening
+# the HSV/LAB bands themselves) fixes exactly this artifact without reducing
+# sensitivity to a real pale/faded defect that happens to sit in a grain's
+# interior.
+DISCOLORATION_EDGE_EROSION_PX: int = 2
 
 # ---------------------------------------------------------------------------
 # AGMARK Grading Thresholds (Step 11)
@@ -81,37 +84,62 @@ LAB_HEALTHY_B_MAX: float = 45.0
 
 AGMARK_THRESHOLDS: dict = {
     "wheat": {
-        # --- Higher is better ---
+        # --- Higher is better (major/minor axis, area) ---
+        # Only 3 tiers: the geometric parameters bottom out at "C" rather than
+        # "Reject" -- a small, dense, or short grain is substandard, not the
+        # kind of contamination/damage "Reject" is reserved for elsewhere in
+        # this table.
         "avg_length_mm": [
-            (6.8, "A"),   # ≥ 6.8 → A
-            (6.0, "B"),   # 6.0–6.7 → B
-            (5.5, "C"),   # 5.5–5.9 → C
-            (0.0, "Reject"),  # < 5.5 → Reject
+            (6.5, "A"),   # ≥ 6.5 → A
+            (5.5, "B"),   # 5.5–6.4 → B
+            (0.0, "C"),   # < 5.5 → C (Stunted)
         ],
-        "avg_lw_ratio": [
-            (3.0, "A"),
-            (2.5, "B"),
-            (2.0, "C"),
-            (0.0, "Reject"),
+        "avg_width_mm": [
+            (3.4, "A"),   # ≥ 3.4 → A
+            (2.8, "B"),   # 2.8–3.3 → B
+            (0.0, "C"),   # < 2.8 → C (Shriveled)
         ],
+        "avg_area_mm2": [
+            (18.0, "A"),  # ≥ 18.0 → A
+            (14.0, "B"),  # 14.0–17.9 → B
+            (0.0, "C"),   # < 14.0 → C (Underweight)
+        ],
+        # --- Band: aspect ratio must fall in a valid range, not just clear a
+        # floor. A ratio that is too low means the fitted ellipse is closer to
+        # round than grain-shaped -- two overlapping grains segmented as one
+        # blob -- and too high means a fragment, not a whole kernel. Both ends
+        # of the band land on the same "in range vs out of range" verdict, so
+        # this metric never distinguishes A from B on its own; it only ever
+        # vetoes down to "C" (Overlap/Broken) when the ratio falls outside
+        # [min, max]. See `_grade_single_metric`'s band branch in grading.py.
+        "avg_lw_ratio": {
+            "type": "band",
+            "min": 1.6,
+            "max": 2.4,
+            "in_band_grade": "A",
+            "out_of_band_grade": "C",
+        },
         # --- Lower is better ---
+        # Broken/discoloured kernels and foreign matter now all bottom out at
+        # "Reject" past a fixed ceiling (damaged/discoloration > 3.5%, foreign
+        # matter > 1.5%) rather than a "C" floor -- past that point the lot is
+        # rejected outright, not merely downgraded.
         "broken_pct": [
-            (2.0, "A"),   # ≤ 2.0% → A
-            (5.0, "B"),   # ≤ 5.0% → B
-            (8.0, "C"),   # ≤ 8.0% → C
-            (100.0, "Reject"),  # > 8.0% → Reject
+            (1.5, "A"),    # ≤ 1.5% → A
+            (2.5, "B"),    # 1.5–2.5% → B
+            (3.5, "C"),    # 2.5–3.5% → C
+            (100.0, "Reject"),  # > 3.5% → Reject
         ],
         "discolored_pct": [
-            (1.0, "A"),
-            (3.0, "B"),
-            (6.0, "C"),
-            (100.0, "Reject"),
+            (1.0, "A"),    # ≤ 1.0% → A
+            (2.0, "B"),    # 1.0–2.0% → B
+            (3.5, "C"),    # 2.0–3.5% → C
+            (100.0, "Reject"),  # > 3.5% → Reject
         ],
         "foreign_matter_pct": [
-            (0.5, "A"),
-            (1.5, "B"),
-            (3.0, "C"),
-            (100.0, "Reject"),
+            (0.5, "A"),    # ≤ 0.5% → A
+            (1.5, "B"),    # 0.5–1.5% → B
+            (100.0, "Reject"),  # > 1.5% → Reject (no C tier)
         ],
     },
     # Future: add "rice", "maize", etc. here with their own thresholds

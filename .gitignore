@@ -8,3 +8,10 @@ __pycache__/
 venv/
 .pytest_cache/
 start.ps1
+/tests/
+uploaded_videos/
+docs/
+.superpowers/
+cv/__pycache__/
+steps/__pycache__/
+claude.md
